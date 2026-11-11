@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="128" fill="#070a12"/>
+  <circle cx="256" cy="256" r="200" fill="none" stroke="#467ff5" stroke-width="12" opacity="0.3"/>
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#528bff" stroke-width="16" opacity="0.6"/>
+  <path d="M384 96L96 235.31v17.64l123.12 47.7L241.92 416h17.64L384 96z" fill="url(#jarvisGrad)"/>
+  <defs>
+    <linearGradient id="jarvisGrad" x1="96" y1="96" x2="384" y2="416" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#528bff"/>
+      <stop offset="100%" stop-color="#356be6"/>
+    </linearGradient>
+  </defs>
+</svg>

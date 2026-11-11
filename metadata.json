@@ -1,0 +1,6 @@
+{
+  "name": "Jarvis AI Assistant",
+  "description": "Futuristic Jarvis AI Assistant with conversation history, Google Account integration, and API Key management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
