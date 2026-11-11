@@ -46,8 +46,11 @@ jobs:
           name: Jarvis-AI-apk
           path: Jarvis-AI.apk
 
+      # A published release gets the APK attached; a manual run creates a new release with it.
       - name: Attach APK to release
-        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.release.tag_name || format('v1.0.{0}', github.run_number) }}
+          name: ${{ github.event.release.name || format('Jarvis AI v1.0.{0}', github.run_number) }}
+          target_commitish: ${{ github.sha }}
           files: Jarvis-AI.apk
