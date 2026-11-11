@@ -1,10 +1,10 @@
 # 🤖 Jarvis AI Assistant
 
 > ⚡ **A high-performance, futuristic AI assistant built as a pure client-side web 
-![TypeScript](https://shields.io)
-![React](https://shields.io)
-![Tailwind CSS](https://shields.io)
-![PWA](https://shields.io)
+![TypeScript](https://badgen.net)
+![React](https://badgen.net)
+![Tailwind CSS](https://badgen.net)
+![PWA](https://badgen.net)
 
 ---
 
