@@ -24,8 +24,10 @@ export interface UserProfile {
   avatar: string;
 }
 
+export type ApiProvider = 'gemini' | 'openai' | 'anthropic' | 'deepseek' | 'groq' | 'openrouter' | 'custom';
+
 export interface ApiKeyConfig {
-  provider: 'gemini' | 'openai' | 'anthropic' | 'deepseek' | 'groq' | 'custom';
+  provider: ApiProvider;
   apiKey: string;
   endpoint?: string;
   selectedModel: string;
@@ -36,10 +38,25 @@ export interface ApiKeyConfig {
 export interface ModelOption {
   id: string;
   name: string;
-  provider: 'gemini' | 'openai' | 'anthropic' | 'deepseek' | 'groq' | 'custom';
+  provider: ApiProvider;
   description: string;
   isPaid?: boolean;
   badge?: string;
 }
 
-export type DrawerTab = 'history' | 'profile' | 'apikeys' | 'selfedit' | 'settings';
+export interface Plugin {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  manifest: any;
+}
+
+export interface PluginSettings {
+  githubToken: string;
+  githubEnabled: boolean;
+  searchEnabled: boolean;
+  loadedPlugins: Plugin[];
+}
+
+export type DrawerTab = 'history' | 'profile' | 'apikeys' | 'selfedit' | 'settings' | 'files' | 'plugins';

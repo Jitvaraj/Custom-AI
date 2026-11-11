@@ -1,0 +1,10 @@
+{
+  "name": "GitHub Repo Analyzer",
+  "id": "github-analyzer",
+  "version": "1.0.0",
+  "description": "Analyzes GitHub repositories for dependencies.",
+  "manifest": {
+    "type": "api",
+    "endpoint": "https://api.github.com"
+  }
+}

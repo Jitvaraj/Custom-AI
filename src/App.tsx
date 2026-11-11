@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Header } from './components/Header';
+import { Header, MODELS } from './components/Header';
 import { SidebarDrawer } from './components/SidebarDrawer';
 import { ChatContainer } from './components/ChatContainer';
 import { BottomDock } from './components/BottomDock';
 
-import { ChatConversation, UserProfile, ApiKeyConfig, DrawerTab, Message } from './types';
+import { ChatConversation, UserProfile, ApiKeyConfig, DrawerTab, Message, ApiProvider, PluginSettings } from './types';
 import { 
   loadConversations, saveConversations, 
   loadActiveChatId, saveActiveChatId,
   loadUserProfile, saveUserProfile,
-  loadApiKeys, saveApiKeys
+  loadApiKeys, saveApiKeys,
+  loadPluginSettings, savePluginSettings
 } from './services/storage';
 import { sendChatClient } from './services/ai';
 
@@ -19,6 +20,7 @@ export default function App() {
   const [activeChatId, setActiveChatId] = useState<string>(loadActiveChatId);
   const [userProfile, setUserProfile] = useState<UserProfile>(loadUserProfile);
   const [apiKeys, setApiKeys] = useState<Record<string, ApiKeyConfig>>(loadApiKeys);
+  const [pluginSettings, setPluginSettings] = useState<PluginSettings>(loadPluginSettings);
   const [selectedModel, setSelectedModel] = useState<string>('jarvis-1.0');
   const [selfEditEnabled, setSelfEditEnabled] = useState<boolean>(true);
 
@@ -48,6 +50,10 @@ export default function App() {
     saveApiKeys(apiKeys);
   }, [apiKeys]);
 
+  useEffect(() => {
+    savePluginSettings(pluginSettings);
+  }, [pluginSettings]);
+
   // Current active conversation
   const currentChat = conversations.find(c => c.id === activeChatId) || conversations[0] || {
     id: 'conv-' + Date.now(),
@@ -58,8 +64,15 @@ export default function App() {
     messages: []
   };
 
-  // Helper to get active API provider configuration
-  const activeProvider = apiKeys['gemini']?.apiKey ? 'gemini (Custom Key)' : 'gemini (System Key)';
+  // Dynamically resolve provider for selected model
+  const currentModelObj = MODELS.find(m => m.id === selectedModel);
+  const currentProvider: ApiProvider = currentModelObj?.provider || 'gemini';
+  const currentKeyConfig = apiKeys[currentProvider];
+  const hasCustomKey = Boolean(currentKeyConfig?.apiKey?.trim());
+  
+  const activeProvider = `${currentProvider.toUpperCase()} ${
+    hasCustomKey ? '(Custom Key)' : (currentProvider === 'gemini' ? '(System Key)' : '(Key Required)')
+  }`;
 
   const handleOpenDrawer = (tab: DrawerTab = 'history') => {
     setDrawerTab(tab);
@@ -126,6 +139,10 @@ export default function App() {
     setApiKeys(prev => ({ ...prev, [config.provider]: config }));
   };
 
+  const handleUpdatePluginSettings = (settings: PluginSettings) => {
+    setPluginSettings(settings);
+  };
+
   const handleRating = (msgId: string, rating: 'up' | 'down') => {
     setConversations(prev => prev.map(conv => {
       if (conv.id !== activeChatId) return conv;
@@ -172,14 +189,20 @@ export default function App() {
     setIsGenerating(true);
 
     try {
-      // Direct Client-Side AI API Call using fetch() and keys stored in localStorage
-      const activeKeyConfig = apiKeys['gemini'] || { provider: 'gemini', apiKey: '', selectedModel: 'gemini-3.8-flash' };
+      // Dynamic Provider lookup
+      const activeKeyConfig = apiKeys[currentProvider] || {
+        provider: currentProvider,
+        apiKey: '',
+        selectedModel: selectedModel
+      };
+
       const responseText = await sendChatClient({
         messages: updatedMessages,
         model: selectedModel,
         systemInstruction: systemInstruction + (selfEditEnabled ? '\n\n[SELF-EDIT MODE ACTIVE]: Generate clean code patches and step-by-step refactoring rules when requested.' : ''),
         apiKeyConfig: activeKeyConfig,
-        provider: 'gemini'
+        provider: currentProvider,
+        pluginSettings: pluginSettings 
       });
 
       const aiMsg: Message = {
@@ -205,8 +228,8 @@ export default function App() {
       const isRateLimit = err.message?.includes('429') || err.message?.includes('Quota') || err.message?.includes('RESOURCE_EXHAUSTED');
       
       const errorText = isRateLimit
-        ? `⚠️ **Free Tier Rate Limit Reached (429)**\n\nThe free tier request limit was temporarily reached for this model.\n\n**Solutions:**\n- Wait 15-30 seconds and click **Regenerate**.\n- Switch model engine to **Jarvis 1.0 (Gemini 3.8 Flash)** or **Jarvis Lite** in the top bar.\n- Add your custom Gemini/OpenAI API key in **Control Center > API Keys** for unlimited high-speed quota.`
-        : `⚠️ **Jarvis Error**: ${err.message || 'Could not connect to AI service.'}\n\nPlease verify your API key in **Control Center > API Keys** or try again.`;
+        ? `⚠️ **Free Tier Rate Limit Reached (429)**\n\nThe free tier request limit was temporarily reached for this model.\n\n**Solutions:**\n- Wait 15-30 seconds and click **Regenerate**.\n- Switch model engine to **Jarvis 1.0 (Gemini 2.5 Flash)** in the top bar.\n- Add your OpenRouter or Gemini API key in **Control Center > API Keys** for unlimited high-speed quota.`
+        : `⚠️ **Jarvis Error (${currentProvider.toUpperCase()})**: ${err.message || 'Could not connect to AI service.'}\n\nPlease check your key in **Control Center > API Keys** tab.`;
 
       const errorMsg: Message = {
         id: 'msg-err-' + Date.now(),
@@ -302,6 +325,8 @@ export default function App() {
           onUpdateUserProfile={setUserProfile}
           apiKeys={apiKeys}
           onSaveApiKey={handleSaveApiKey}
+          pluginSettings={pluginSettings}
+          onUpdatePluginSettings={handleUpdatePluginSettings}
           systemInstruction={systemInstruction}
           onChangeSystemInstruction={setSystemInstruction}
           selfEditEnabled={selfEditEnabled}

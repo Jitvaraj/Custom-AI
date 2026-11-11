@@ -16,14 +16,14 @@ interface HeaderProps {
 export const MODELS: ModelOption[] = [
   {
     id: 'jarvis-1.0',
-    name: 'Jarvis 1.0 (Gemini 3.8 Flash)',
+    name: 'Jarvis 1.0 (Gemini 2.5 Flash)',
     provider: 'gemini',
     description: 'Fast, intelligent, high throughput for everyday code & conversation.',
     badge: 'Fast & Default'
   },
   {
     id: 'jarvis-pro',
-    name: 'Jarvis Pro (Gemini 4 Argon)',
+    name: 'Jarvis Pro (Gemini 2.5 Pro)',
     provider: 'gemini',
     description: 'Advanced reasoning, deep technical analysis & complex code architecture.',
     badge: 'Pro Reasoning',
@@ -31,32 +31,67 @@ export const MODELS: ModelOption[] = [
   },
   {
     id: 'jarvis-thinking',
-    name: 'Jarvis Thinking (Gemini 4 Carbon)',
+    name: 'Jarvis Thinking (Gemini 2.5 Pro Thinking)',
     provider: 'gemini',
     description: 'Maximum reasoning depth for scientific, security & root-cause analysis.',
     badge: 'Deep Thinking',
     isPaid: true
   },
   {
-    id: 'deepseek-r1',
-    name: 'DeepSeek R1 (Custom/OpenRouter)',
-    provider: 'deepseek',
-    description: 'Open-weights reasoning model for step-by-step logic.',
-    badge: 'Custom API'
+    id: 'openrouter-claude',
+    name: 'OpenRouter (Claude 3.5 Sonnet)',
+    provider: 'openrouter',
+    description: 'Access Claude 3.5 Sonnet via OpenRouter API Key.',
+    badge: 'OpenRouter API'
+  },
+  {
+    id: 'openrouter-gpt4o',
+    name: 'OpenRouter (GPT-4o)',
+    provider: 'openrouter',
+    description: 'Access OpenAI GPT-4o via OpenRouter API Key.',
+    badge: 'OpenRouter API'
+  },
+  {
+    id: 'openrouter-deepseek',
+    name: 'OpenRouter (DeepSeek R1)',
+    provider: 'openrouter',
+    description: 'Access DeepSeek R1 via OpenRouter API Key.',
+    badge: 'OpenRouter API'
   },
   {
     id: 'gpt-4o',
     name: 'OpenAI GPT-4o',
     provider: 'openai',
-    description: 'Multimodal intelligence by OpenAI.',
-    badge: 'Custom API'
+    description: 'Multimodal intelligence directly by OpenAI.',
+    badge: 'Direct API'
   },
   {
     id: 'claude-3-5-sonnet',
     name: 'Anthropic Claude 3.5 Sonnet',
     provider: 'anthropic',
     description: 'Premier coding and markdown synthesis.',
-    badge: 'Custom API'
+    badge: 'Direct API'
+  },
+  {
+    id: 'deepseek-r1',
+    name: 'DeepSeek R1',
+    provider: 'deepseek',
+    description: 'Open-weights reasoning model directly by DeepSeek.',
+    badge: 'Direct API'
+  },
+  {
+    id: 'groq-llama',
+    name: 'Groq (Llama 3.3 70B)',
+    provider: 'groq',
+    description: 'Ultra-fast inference powered by Groq LPU.',
+    badge: 'Groq API'
+  },
+  {
+    id: 'custom-model',
+    name: 'Custom REST Endpoint',
+    provider: 'custom',
+    description: 'Connect to your custom local or remote API endpoint.',
+    badge: 'Custom URL'
   }
 ];
 
