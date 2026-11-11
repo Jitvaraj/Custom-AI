@@ -1,0 +1,7 @@
+{
+  "appId": "com.jitvaraj.jarvis",
+  "appName": "Jarvis AI",
+  "webDir": "dist-android",
+  "server": { "androidScheme": "http", "cleartext": true },
+  "android": { "allowMixedContent": true }
+}
