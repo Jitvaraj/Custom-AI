@@ -39,7 +39,7 @@ Make sure you have **Node.js** and **npm** (or **Bun**) installed.
 ### 2️⃣ Clone & Install
 Clone the repository and install the required dependencies:
 ```bash
-git clone https://github.com
+git clone https://github.com/Jitvaraj/Custom-AI
 cd Custom-AI
 npm install
 ```
