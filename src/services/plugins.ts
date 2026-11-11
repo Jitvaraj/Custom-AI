@@ -1,4 +1,4 @@
-import { PluginSettings } from '../types';
+import { PluginSettings } from '@/types';
 
 export async function fetchGitHubData(path: string, pluginSettings: PluginSettings): Promise<any> {
   if (!pluginSettings.githubEnabled || !pluginSettings.githubToken) {

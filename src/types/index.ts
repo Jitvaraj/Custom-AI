@@ -3,9 +3,9 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
-  rating?: 'up' | 'down';
-  image?: string;
-  isStreaming?: boolean;
+  rating?: 'up' | 'down' | undefined;
+  image?: string | undefined;
+  isStreaming?: boolean | undefined;
 }
 
 export interface ChatConversation {
@@ -15,7 +15,7 @@ export interface ChatConversation {
   updatedAt: number;
   messages: Message[];
   model: string;
-  pinned?: boolean;
+  pinned?: boolean | undefined;
 }
 
 export interface UserProfile {
@@ -29,10 +29,10 @@ export type ApiProvider = 'gemini' | 'openai' | 'anthropic' | 'deepseek' | 'groq
 export interface ApiKeyConfig {
   provider: ApiProvider;
   apiKey: string;
-  endpoint?: string;
+  endpoint?: string | undefined;
   selectedModel: string;
-  isValidated?: boolean;
-  validationMessage?: string;
+  isValidated?: boolean | undefined;
+  validationMessage?: string | undefined;
 }
 
 export interface ModelOption {
@@ -40,8 +40,8 @@ export interface ModelOption {
   name: string;
   provider: ApiProvider;
   description: string;
-  isPaid?: boolean;
-  badge?: string;
+  isPaid?: boolean | undefined;
+  badge?: string | undefined;
 }
 
 export interface Plugin {
@@ -59,4 +59,4 @@ export interface PluginSettings {
   loadedPlugins: Plugin[];
 }
 
-export type DrawerTab = 'history' | 'profile' | 'apikeys' | 'selfedit' | 'settings' | 'files' | 'plugins';
+export type DrawerTab = 'history' | 'profile' | 'apikeys' | 'selfedit' | 'settings' | 'files' | 'plugins' | 'terminal';

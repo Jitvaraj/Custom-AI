@@ -1,75 +1,39 @@
-# 🤖 Jarvis AI Assistant
+# Jarvis AI Assistant
 
-> ⚡ **A high-performance, futuristic AI assistant built as a pure client-side web 
-![TypeScript](https://badgen.net)
-![React](https://badgen.net)
-![Tailwind CSS](https://badgen.net)
-![PWA](https://badgen.net)
+Personal AI assistant that runs in the browser with your own provider keys
+(Gemini, OpenAI, Anthropic, DeepSeek, Groq, OpenRouter, or any OpenAI-compatible
+endpoint such as freellmapi or OmniRoute). Replies stream live, every file in a
+chat can be downloaded, and a built-in terminal connects to Termux or your PC via ttyd.
 
----
+## Folder layout
 
-## ✨ Features
-
-* 🧠 **Multi-Model Support** — Seamlessly switch between Google Gemini, OpenAI, Anthropic, DeepSeek, Groq, and custom REST API providers.
-* 🔒 **Local Persistence** — All conversation history, user profiles, and API keys are securely stored locally in your browser's `LocalStorage`.
-* 🎛️ **Control Center** — Advanced sidebar for managing chat history, API keys, system instructions, and plugins.
-* 🔌 **Plugins & Integrations** — Built-in support for external tools, including Internet Search (Grounding) and GitHub integration.
-* 💻 **Self-Coder Mode** — Toggleable developer mode for generating clean code patches and refactoring rules.
-* 📱 **Progressive Web App (PWA)** — Installable directly onto your desktop or mobile device for a fast, native-like experience.
-
----
-
-## 🛠️ Tech Stack
-
-* **Frontend:** React + TypeScript
-* **Build Tool:** Vite
-* **Styling:** Tailwind CSS
-* **AI Integration:** Google AI Studio & Multi-Provider REST APIs
-
----
-
-## 🚀 Getting Started
-
-Follow these steps to run the project locally on your machine:
-
-### 1️⃣ Prerequisites
-Make sure you have **Node.js** and **npm** (or **Bun**) installed.
-
-### 2️⃣ Clone & Install
-Clone the repository and install the required dependencies:
-```bash
-git clone https://github.com/Jitvaraj/Custom-AI
-cd Custom-AI
-npm install
+```text
+public/                 static files (icon, example plugin)
+src/
+  app/                  JarvisApp.tsx – the main app shell and chat logic
+  components/
+    jarvis/             Jarvis screens: sidebar, header, chat, dock, control center, terminal
+    ui/                 shared buttons, sheets, tabs, inputs
+  services/             AI streaming, markdown, downloads, terminal, storage, speech, plugins (+ tests)
+  hooks/                reusable React hooks
+  types/                shared TypeScript types
+  lib/                  small utilities
+  routes/               pages (index.tsx loads the app)
+  styles.css            theme colors, fonts and effects
 ```
 
-### 3️⃣ Configure Environment
-Copy the example environment file and add your preferred API keys:
+## Run locally
+
 ```bash
-cp .env.example .env
+bun install
+bun run dev
 ```
 
-### 4️⃣ Run Development Server
-Start the local development server:
+## Terminal (Termux / PC)
+
 ```bash
-npm run dev
+pkg install -y ttyd nodejs git && ttyd -W bash   # Termux
+ttyd -W bash                                     # PC
 ```
 
-### 5️⃣ Build for Production
-Generate an optimized static production build:
-```bash
-npm run build
-```
-
----
-
-## 🤝 Contributing
-
-Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com).
-
----
-
-<p align="center">
-  Built with ❤️ using React, Vite, Tailwind CSS, and Google AI Studio.
-</p>
-
+Then open Control Center → Term → Connect.

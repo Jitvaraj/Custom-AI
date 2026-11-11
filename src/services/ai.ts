@@ -1,4 +1,4 @@
-import { ApiKeyConfig, ApiProvider, Message, PluginSettings } from '../types';
+import type { ApiKeyConfig, ApiProvider, Message, PluginSettings } from '@/types';
 
 function getModelName(modelId?: string) {
   if (!modelId) return 'gemini-2.5-flash';
@@ -12,250 +12,305 @@ function getModelName(modelId?: string) {
 export interface SendChatParams {
   messages: Message[];
   model: string;
-  systemInstruction?: string;
-  apiKeyConfig?: ApiKeyConfig;
-  provider?: ApiProvider;
-  pluginSettings?: PluginSettings;
+  systemInstruction?: string | undefined;
+  apiKeyConfig?: ApiKeyConfig | undefined;
+  provider?: ApiProvider | undefined;
+  pluginSettings?: PluginSettings | undefined;
 }
 
-export async function sendChatClient(params: SendChatParams): Promise<string> {
+export interface StreamOptions {
+  /** Called with each new piece of text as it arrives. */
+  onDelta: (text: string) => void;
+  signal?: AbortSignal | undefined;
+}
+
+async function readErrorBody(resp: Response): Promise<string> {
+  const text = await resp.text().catch(() => '');
+  try {
+    const json = JSON.parse(text);
+    return json?.error?.message || json?.message || text;
+  } catch {
+    return text || `HTTP ${resp.status}`;
+  }
+}
+
+/** Reads a Server-Sent Events body and hands each `data:` payload to onData. */
+async function readSSE(resp: Response, onData: (data: string) => void): Promise<void> {
+  if (!resp.body) return;
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const flushLine = (raw: string) => {
+    const line = raw.replace(/\r$/, '');
+    if (!line.startsWith('data:')) return;
+    const data = line.slice(5).trim();
+    if (!data || data === '[DONE]') return;
+    onData(data);
+  };
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buffer.indexOf('\n')) >= 0) {
+      flushLine(buffer.slice(0, idx));
+      buffer = buffer.slice(idx + 1);
+    }
+  }
+  buffer += decoder.decode();
+  if (buffer) flushLine(buffer);
+}
+
+function parseJSON(data: string): any {
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+/** OpenAI-style chat completions (OpenAI, OpenRouter, Groq, DeepSeek, custom). */
+async function streamOpenAICompatible(args: {
+  label: string;
+  url: string;
+  headers: Record<string, string>;
+  body: Record<string, unknown>;
+  opts: StreamOptions;
+}): Promise<string> {
+  const { label, url, headers, body, opts } = args;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ ...body, stream: true }),
+    signal: opts.signal ?? null,
+  });
+  if (!resp.ok) throw new Error(`${label} API error (${resp.status}): ${await readErrorBody(resp)}`);
+
+  // Some custom endpoints ignore `stream: true` and answer with plain JSON.
+  const contentType = resp.headers.get('content-type') || '';
+  if (!contentType.includes('event-stream')) {
+    const data = await resp.json().catch(() => ({}));
+    const text =
+      data.choices?.[0]?.message?.content || data.reply || data.text || JSON.stringify(data, null, 2);
+    opts.onDelta(text);
+    return text;
+  }
+
+  let full = '';
+  let streamError: string | null = null;
+  await readSSE(resp, (data) => {
+    const json = parseJSON(data);
+    if (!json) return;
+    if (json.error) {
+      streamError = json.error.message || String(json.error);
+      return;
+    }
+    const delta: string | undefined = json.choices?.[0]?.delta?.content;
+    if (delta) {
+      full += delta;
+      opts.onDelta(delta);
+    }
+  });
+  if (streamError && !full) throw new Error(`${label} API error: ${streamError}`);
+  return full || 'No response generated.';
+}
+
+function chatMessages(messages: Message[], systemInstruction?: string) {
+  return [
+    ...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []),
+    ...messages.map((m) => ({ role: m.role, content: m.content })),
+  ];
+}
+
+/** Streams a reply from the chosen provider, calling opts.onDelta for every new chunk. */
+export async function streamChatClient(params: SendChatParams, opts: StreamOptions): Promise<string> {
   const { messages, model, systemInstruction, apiKeyConfig, provider = 'gemini', pluginSettings } = params;
   const selectedModel = getModelName(model);
 
-  // OpenRouter Provider
   if (provider === 'openrouter') {
     const key = apiKeyConfig?.apiKey;
-    if (!key) throw new Error('OpenRouter API Key is required. Please set it in Control Center > API Keys tab.');
-    const targetModel = apiKeyConfig?.selectedModel || (model.includes('/') ? model : 'anthropic/claude-3.5-sonnet');
-    const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
+    if (!key) throw new Error('OpenRouter API Key is required. Please set it in Control Center > API Keys.');
+    const targetModel =
+      apiKeyConfig?.selectedModel || (model.includes('/') ? model : 'anthropic/claude-3.5-sonnet');
+    return streamOpenAICompatible({
+      label: 'OpenRouter',
+      url: 'https://openrouter.ai/api/v1/chat/completions',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${key}`,
-        'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'https://jarvis.ai',
-        'X-Title': 'Jarvis AI'
+        Authorization: `Bearer ${key}`,
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'Jarvis AI',
       },
-      body: JSON.stringify({
-        model: targetModel,
-        messages: [
-          ...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []),
-          ...messages.map(m => ({ role: m.role, content: m.content }))
-        ]
-      })
+      body: { model: targetModel, messages: chatMessages(messages, systemInstruction) },
+      opts,
     });
-    if (!resp.ok) {
-      const errText = await resp.text();
-      let parsedMsg = errText;
-      try {
-        const jsonErr = JSON.parse(errText);
-        parsedMsg = jsonErr?.error?.message || jsonErr?.message || errText;
-      } catch (e) {}
-      throw new Error(`OpenRouter API error (${resp.status}): ${parsedMsg}`);
-    }
-    const data = await resp.json();
-    return data.choices?.[0]?.message?.content || 'No response generated.';
   }
 
-  // OpenAI Provider
   if (provider === 'openai') {
     const key = apiKeyConfig?.apiKey;
-    if (!key) throw new Error('OpenAI API Key is required. Please set it in API Keys tab.');
-    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${key}`
-      },
-      body: JSON.stringify({
-        model: apiKeyConfig?.selectedModel || 'gpt-4o',
-        messages: [
-          ...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []),
-          ...messages.map(m => ({ role: m.role, content: m.content }))
-        ]
-      })
+    if (!key) throw new Error('OpenAI API Key is required. Please set it in Control Center > API Keys.');
+    return streamOpenAICompatible({
+      label: 'OpenAI',
+      url: 'https://api.openai.com/v1/chat/completions',
+      headers: { Authorization: `Bearer ${key}` },
+      body: { model: apiKeyConfig?.selectedModel || 'gpt-4o', messages: chatMessages(messages, systemInstruction) },
+      opts,
     });
-    if (!resp.ok) {
-      const err = await resp.text();
-      throw new Error(`OpenAI API error (${resp.status}): ${err}`);
-    }
-    const data = await resp.json();
-    return data.choices?.[0]?.message?.content || 'No response generated.';
   }
 
-  // Anthropic Provider
+  if (provider === 'groq') {
+    const key = apiKeyConfig?.apiKey;
+    if (!key) throw new Error('Groq API Key is required. Please set it in Control Center > API Keys.');
+    return streamOpenAICompatible({
+      label: 'Groq',
+      url: 'https://api.groq.com/openai/v1/chat/completions',
+      headers: { Authorization: `Bearer ${key}` },
+      body: {
+        model: apiKeyConfig?.selectedModel || 'llama-3.3-70b-versatile',
+        messages: chatMessages(messages, systemInstruction),
+      },
+      opts,
+    });
+  }
+
+  if (provider === 'deepseek') {
+    const key = apiKeyConfig?.apiKey;
+    if (!key) throw new Error('DeepSeek API Key is required. Please set it in Control Center > API Keys.');
+    return streamOpenAICompatible({
+      label: 'DeepSeek',
+      url: 'https://api.deepseek.com/v1/chat/completions',
+      headers: { Authorization: `Bearer ${key}` },
+      body: {
+        model: apiKeyConfig?.selectedModel || 'deepseek-chat',
+        messages: chatMessages(messages, systemInstruction),
+      },
+      opts,
+    });
+  }
+
+  if (provider === 'custom') {
+    const endpoint = apiKeyConfig?.endpoint?.trim();
+    if (!endpoint) {
+      throw new Error(
+        'Custom Endpoint URL is required. Add a full URL (e.g. https://api.my-llm.com/v1/chat/completions) in Control Center > API Keys.',
+      );
+    }
+    const key = apiKeyConfig?.apiKey;
+    return streamOpenAICompatible({
+      label: 'Custom Endpoint',
+      url: endpoint,
+      headers: key ? { Authorization: `Bearer ${key}` } : {},
+      body: {
+        model: apiKeyConfig?.selectedModel || 'custom-model',
+        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      },
+      opts,
+    });
+  }
+
   if (provider === 'anthropic') {
     const key = apiKeyConfig?.apiKey;
-    if (!key) throw new Error('Anthropic API Key is required. Please set it in API Keys tab.');
+    if (!key) throw new Error('Anthropic API Key is required. Please set it in Control Center > API Keys.');
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': key,
         'anthropic-version': '2023-06-01',
-        'dangerously-allow-browser': 'true'
+        'anthropic-dangerous-direct-browser-access': 'true',
       },
       body: JSON.stringify({
         model: apiKeyConfig?.selectedModel || 'claude-3-5-sonnet-20241022',
         max_tokens: 2048,
         system: systemInstruction,
-        messages: messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }))
-      })
+        stream: true,
+        messages: messages.map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
+      }),
+      signal: opts.signal ?? null,
     });
-    if (!resp.ok) {
-      const err = await resp.text();
-      throw new Error(`Anthropic API error (${resp.status}): ${err}`);
-    }
-    const data = await resp.json();
-    return data.content?.[0]?.text || 'No response generated.';
+    if (!resp.ok) throw new Error(`Anthropic API error (${resp.status}): ${await readErrorBody(resp)}`);
+    let full = '';
+    let streamError: string | null = null;
+    await readSSE(resp, (data) => {
+      const json = parseJSON(data);
+      if (!json) return;
+      if (json.type === 'error') streamError = json.error?.message || 'Unknown error';
+      if (json.type === 'content_block_delta' && json.delta?.type === 'text_delta') {
+        full += json.delta.text;
+        opts.onDelta(json.delta.text);
+      }
+    });
+    if (streamError && !full) throw new Error(`Anthropic API error: ${streamError}`);
+    return full || 'No response generated.';
   }
 
-  // Groq Provider
-  if (provider === 'groq') {
-    const key = apiKeyConfig?.apiKey;
-    if (!key) throw new Error('Groq API Key is required. Please set it in API Keys tab.');
-    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${key}`
-      },
-      body: JSON.stringify({
-        model: apiKeyConfig?.selectedModel || 'llama-3.3-70b-versatile',
-        messages: [
-          ...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []),
-          ...messages.map(m => ({ role: m.role, content: m.content }))
-        ]
-      })
-    });
-    if (!resp.ok) {
-      const err = await resp.text();
-      throw new Error(`Groq API error (${resp.status}): ${err}`);
-    }
-    const data = await resp.json();
-    return data.choices?.[0]?.message?.content || 'No response generated.';
-  }
-
-  // DeepSeek Provider
-  if (provider === 'deepseek') {
-    const key = apiKeyConfig?.apiKey;
-    if (!key) throw new Error('DeepSeek API Key is required. Please set it in API Keys tab.');
-    const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${key}`
-      },
-      body: JSON.stringify({
-        model: apiKeyConfig?.selectedModel || 'deepseek-chat',
-        messages: [
-          ...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []),
-          ...messages.map(m => ({ role: m.role, content: m.content }))
-        ]
-      })
-    });
-    if (!resp.ok) {
-      const err = await resp.text();
-      throw new Error(`DeepSeek API error (${resp.status}): ${err}`);
-    }
-    const data = await resp.json();
-    return data.choices?.[0]?.message?.content || 'No response generated.';
-  }
-
-  // Custom Endpoint Provider
-  if (provider === 'custom') {
-    const endpoint = apiKeyConfig?.endpoint;
-    if (!endpoint || !endpoint.trim()) {
-      throw new Error('Custom Endpoint URL is required. Please specify a full URL (e.g. https://api.my-llm.com/v1/chat/completions) in API Keys tab.');
-    }
-    const key = apiKeyConfig?.apiKey;
-    const resp = await fetch(endpoint.trim(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(key ? { 'Authorization': `Bearer ${key}` } : {})
-      },
-      body: JSON.stringify({
-        model: apiKeyConfig?.selectedModel || 'custom-model',
-        messages: messages.map(m => ({ role: m.role, content: m.content }))
-      })
-    });
-    if (!resp.ok) {
-      const err = await resp.text();
-      throw new Error(`Custom Endpoint error (${resp.status}): ${err}`);
-    }
-    const data = await resp.json();
-    return data.choices?.[0]?.message?.content || data.reply || data.text || JSON.stringify(data, null, 2);
-  }
-
-  // Google Gemini API Client Call via fetch()
-  const apiKey = apiKeyConfig?.apiKey || 
-    (import.meta.env.VITE_GEMINI_API_KEY as string) || 
-    (import.meta.env.GEMINI_API_KEY as string) || '';
-
+  // Google Gemini (default)
+  const apiKey =
+    apiKeyConfig?.apiKey ||
+    (import.meta.env['VITE_GEMINI_API_KEY'] as string) ||
+    (import.meta.env['GEMINI_API_KEY'] as string) ||
+    '';
   if (!apiKey) {
-    throw new Error('Gemini API key is required. Please enter your API Key in Control Center > API Keys tab.');
+    throw new Error('Gemini API key is required. Please enter your API Key in Control Center > API Keys.');
   }
 
-  const contents = messages.map(m => {
+  const contents = messages.map((m) => {
     const parts: any[] = [];
     if (m.image) {
       const base64Data = m.image.replace(/^data:image\/\w+;base64,/, '');
       const mimeType = m.image.substring('data:'.length, m.image.indexOf(';base64'));
-      parts.push({
-        inlineData: {
-          mimeType: mimeType || 'image/png',
-          data: base64Data
-        }
-      });
+      parts.push({ inlineData: { mimeType: mimeType || 'image/png', data: base64Data } });
     }
     parts.push({ text: m.content || '' });
-    return {
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts
-    };
+    return { role: m.role === 'assistant' ? 'model' : 'user', parts };
   });
 
   const requestBody: any = {
     contents,
-    systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined
+    systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
   };
-  
-  // Add tools if search is enabled
   if (pluginSettings?.searchEnabled) {
-    requestBody.tools = [{ googleSearchRetrieval: {} }];
+    requestBody.tools = [{ googleSearch: {} }];
   }
 
-  const callGeminiModel = async (targetModel: string) => {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
+  const streamGemini = async (targetModel: string): Promise<string> => {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?alt=sse&key=${apiKey}`;
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
+      body: JSON.stringify(requestBody),
+      signal: opts.signal ?? null,
     });
     if (!resp.ok) {
-      const errorJson = await resp.json().catch(() => ({}));
-      const errMessage = errorJson?.error?.message || `HTTP ${resp.status}`;
-      const errObj = new Error(errMessage);
-      (errObj as any).status = resp.status;
+      const errObj = new Error(await readErrorBody(resp)) as Error & { status?: number };
+      errObj.status = resp.status;
       throw errObj;
     }
-    const data = await resp.json();
-    const candidate = data.candidates?.[0];
-    const textPart = candidate?.content?.parts?.[0]?.text;
-    return textPart || 'No content generated.';
+    let full = '';
+    await readSSE(resp, (data) => {
+      const json = parseJSON(data);
+      const parts: any[] = json?.candidates?.[0]?.content?.parts || [];
+      for (const part of parts) {
+        if (part.thought || typeof part.text !== 'string' || !part.text) continue;
+        full += part.text;
+        opts.onDelta(part.text);
+      }
+    });
+    return full || 'No content generated.';
   };
 
   try {
-    return await callGeminiModel(selectedModel);
+    return await streamGemini(selectedModel);
   } catch (err: any) {
-    if ((err.status === 429 || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) && selectedModel !== 'gemini-2.5-flash-lite') {
+    const isRateLimit =
+      err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED');
+    if (isRateLimit && selectedModel !== 'gemini-2.5-flash-lite') {
       console.warn(`Rate limit hit on ${selectedModel}, retrying with gemini-2.5-flash-lite...`);
-      try {
-        const fallbackText = await callGeminiModel('gemini-2.5-flash-lite');
-        return fallbackText + '\n\n*(Note: High request volume detected. Served via Gemini Flash Lite)*';
-      } catch (fallbackErr) {
+      const text = await streamGemini('gemini-2.5-flash-lite').catch(() => {
         throw err;
-      }
+      });
+      const note = '\n\n*(Note: High request volume detected. Served via Gemini Flash Lite)*';
+      opts.onDelta(note);
+      return text + note;
     }
     throw err;
   }
@@ -264,7 +319,7 @@ export async function sendChatClient(params: SendChatParams): Promise<string> {
 export async function verifyKeyClient(provider: string, apiKey: string, endpoint?: string): Promise<{ valid: boolean; message: string }> {
   try {
     if (provider === 'gemini' || !provider) {
-      const keyToTest = apiKey || (import.meta.env.VITE_GEMINI_API_KEY as string) || (import.meta.env.GEMINI_API_KEY as string) || '';
+      const keyToTest = apiKey || (import.meta.env['VITE_GEMINI_API_KEY'] as string) || (import.meta.env['GEMINI_API_KEY'] as string) || '';
       if (!keyToTest) return { valid: false, message: 'Please enter a Gemini API Key.' };
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${keyToTest}`;
       const resp = await fetch(url, {
@@ -316,7 +371,7 @@ export async function verifyKeyClient(provider: string, apiKey: string, endpoint
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
-          'dangerously-allow-browser': 'true'
+          'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
           model: 'claude-3-haiku-20240307',

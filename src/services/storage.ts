@@ -1,4 +1,4 @@
-import { ChatConversation, UserProfile, ApiKeyConfig, PluginSettings } from '../types';
+import { ChatConversation, UserProfile, ApiKeyConfig, PluginSettings } from '@/types';
 
 const PLUGIN_SETTINGS_KEY = 'jarvis_plugin_settings_v1';
 const CONVERSATIONS_KEY = 'jarvis_conversations_v1';
