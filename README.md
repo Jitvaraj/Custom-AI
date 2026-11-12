@@ -1,3 +1,4 @@
+
 <div align="center">
 
 # ⚡ Jarvis AI Assistant
@@ -64,3 +65,11 @@ ttyd -W bash
 ```
 
 Once running, open **Control Center → Term → Connect** inside Jarvis to link your shell.
+
+### 3. Local AI Hub (FreeLLMAPI / OmniRoute)
+
+Open **Control Center → Term**. Each server card shows whether it is running, and has:
+
+- **Start** (when the terminal is connected) or **Copy start script**: a Termux one-liner that installs what's missing, runs `termux-wake-lock` and starts the server in the background (log in `~/freellmapi.log` / `~/omniroute.log`).
+- **Dashboard**: opens the server's web page (FreeLLMAPI `:5173`, OmniRoute `:20128`) where you add provider keys and copy your API key.
+- **Models** + **Use in Jarvis**: paste the key, pick a model, and Jarvis replies through that server.

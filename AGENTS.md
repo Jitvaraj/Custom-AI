@@ -33,4 +33,5 @@ use the editor.
 
 - Jarvis code is split by kind: `src/app/` (JarvisApp shell), `src/components/jarvis/`, `src/services/`, `src/hooks/`, `src/types/`; import across folders with `@/` aliases. JarvisApp is mounted client-only from `src/routes/index.tsx`, because it reads chats, keys and settings from localStorage at startup.
 - Jarvis calls AI providers directly from the browser with the user's own keys; `src/services/ai.ts` streams every provider over SSE via `onDelta`, and the app batches chunks per animation frame — keep new providers on that streaming interface.
-- The Jarvis terminal is an xterm.js client for the user's own ttyd (Termux/PC) over WebSocket; a hosted web app cannot run a shell itself.
+- The Jarvis terminal is one app-wide session (`src/services/terminalSession.ts`) so tab switches don't drop it: xterm.js talks to the user's own ttyd (Termux/PC) over WebSocket, and falls back to a built-in browser shell (`localShell.ts` + `lineEditor.ts`) when not connected, because a hosted/APK web app cannot run a real shell itself.
+- Android APK: `mobile/` + `vite.android.config.ts` build a server-free bundle into `dist-android/`; Capacitor wraps it in CI (`.github/workflows/android-apk.yml`), which generates `android/` on the fly — keep the APK build independent of the TanStack server build.

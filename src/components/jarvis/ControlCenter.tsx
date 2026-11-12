@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState, type ChangeEvent, type ReactNode }
 import { SquareTerminal } from 'lucide-react';
 import { LOCAL_SERVERS, localServerEndpoint } from '@/services/terminal';
 const TerminalPanel = lazy(() => import('./TerminalPanel'));
+const LocalHubPanel = lazy(() => import('./LocalHubPanel'));
 import {
   KeyRound,
   Code2,
@@ -46,6 +47,8 @@ interface ControlCenterProps {
   selfEditEnabled: boolean;
   onToggleSelfEdit: (v: boolean) => void;
   currentProvider: ApiProvider;
+  /** Switches the chat engine to the Custom endpoint (used by the Local AI Hub). */
+  onUseCustomEngine: () => void;
 }
 
 const PROVIDERS: Array<{ id: ApiProvider; label: string; defaultModel: string }> = [
@@ -121,7 +124,14 @@ export function ControlCenter(props: ControlCenterProps) {
             </TabsContent>
             <TabsContent value="terminal" className="mt-4">
               <Suspense fallback={<p className="text-sm text-subtle">Loading terminal…</p>}>
-                <TerminalPanel />
+                <div className="space-y-4">
+                  <LocalHubPanel
+                    customConfig={props.apiKeys['custom']}
+                    onSaveApiKey={props.onSaveApiKey}
+                    onUseCustomEngine={props.onUseCustomEngine}
+                  />
+                  <TerminalPanel />
+                </div>
               </Suspense>
             </TabsContent>
             <TabsContent value="profile" className="mt-4">

@@ -305,6 +305,7 @@ export default function JarvisApp() {
         selfEditEnabled={selfEditEnabled}
         onToggleSelfEdit={setSelfEditEnabled}
         currentProvider={currentProvider}
+        onUseCustomEngine={() => setSelectedModel('custom-model')}
       />
     </div>
   );

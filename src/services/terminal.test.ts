@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { encodeInput, encodeResize, localServerEndpoint, normalizeTtydUrl } from './terminal';
+import { LOCAL_SERVERS, encodeInput, encodeResize, localServerEndpoint, normalizeTtydUrl, parseModelList } from './terminal';
 
 const dec = new TextDecoder();
 
@@ -16,5 +16,25 @@ describe('terminal helpers', () => {
   it('points presets at the OpenAI chat route', () => {
     expect(localServerEndpoint(3001)).toBe('http://localhost:3001/v1/chat/completions');
     expect(localServerEndpoint(20128)).toBe('http://localhost:20128/v1/chat/completions');
+  });
+});
+
+describe('local AI servers', () => {
+  it('uses the documented ports', () => {
+    const by = Object.fromEntries(LOCAL_SERVERS.map((s) => [s.id, s]));
+    expect(by['freellmapi']?.port).toBe(3001);
+    expect(by['freellmapi']?.dashboardPort).toBe(5173);
+    expect(by['omniroute']?.port).toBe(20128);
+  });
+  it('Termux scripts keep the phone awake and start in the background', () => {
+    for (const s of LOCAL_SERVERS) {
+      expect(s.termux).toContain('termux-wake-lock');
+      expect(s.termux).toContain('nohup');
+    }
+  });
+  it('reads model lists', () => {
+    expect(parseModelList({ data: [{ id: 'auto' }, { id: 'gpt' }, { id: 'auto' }] })).toEqual(['auto', 'gpt']);
+    expect(parseModelList(['a', 'b'])).toEqual(['a', 'b']);
+    expect(parseModelList({ error: 'nope' })).toEqual([]);
   });
 });

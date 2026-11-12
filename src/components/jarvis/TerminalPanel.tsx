@@ -1,19 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
-import { Copy, Plug, PlugZap, Terminal as TerminalIcon } from 'lucide-react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { Copy, CornerDownLeft, Keyboard, KeyboardOff, Plug, PlugZap, Terminal as TerminalIcon } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import {
-  DEFAULT_TTYD_URL,
-  LOCAL_SERVERS,
-  encodeHandshake,
-  encodeInput,
-  encodeResize,
-  normalizeTtydUrl,
-} from '@/services/terminal';
-
-type Status = 'idle' | 'connecting' | 'online' | 'error';
-const URL_KEY = 'jarvis_ttyd_url';
+import { terminalSession as session } from '@/services/terminalSession';
 
 const KEYS: Array<{ label: string; seq: string }> = [
   { label: 'Esc', seq: '\x1b' },
@@ -28,106 +18,52 @@ const KEYS: Array<{ label: string; seq: string }> = [
   { label: '|', seq: '|' },
   { label: '~', seq: '~' },
   { label: '/', seq: '/' },
+  { label: '-', seq: '-' },
 ];
+
+const STATUS_LABEL = {
+  local: 'built-in shell',
+  connecting: 'connecting',
+  online: 'connected',
+  error: 'error · built-in shell',
+} as const;
 
 export default function TerminalPanel() {
   const hostRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<any>(null);
-  const fitRef = useRef<any>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const [url, setUrl] = useState(DEFAULT_TTYD_URL);
-  const [status, setStatus] = useState<Status>('idle');
-  const [note, setNote] = useState('');
+  const { status, note, url, directTyping } = useSyncExternalStore(session.subscribe, session.getState, session.getState);
+  const [line, setLine] = useState('');
+  const [past, setPast] = useState<string[]>([]);
+  const [pastIndex, setPastIndex] = useState(-1);
 
   useEffect(() => {
-    const saved = localStorage.getItem(URL_KEY);
-    if (saved) setUrl(saved);
-    let disposed = false;
-    let ro: ResizeObserver | undefined;
-    (async () => {
-      const [{ Terminal }, { FitAddon }] = await Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit')]);
-      if (disposed || !hostRef.current) return;
-      const styles = getComputedStyle(document.documentElement);
-      const term = new Terminal({
-        fontFamily: '"JetBrains Mono", monospace',
-        fontSize: 13,
-        cursorBlink: true,
-        convertEol: false,
-        theme: { background: '#0b0f14', foreground: '#d7e3ee', cursor: '#38e1ff' },
-      });
-      void styles;
-      const fit = new FitAddon();
-      term.loadAddon(fit);
-      term.open(hostRef.current);
-      fit.fit();
-      term.writeln('\x1b[36mJarvis terminal\x1b[0m — connect to Termux or your PC running ttyd.');
-      term.onData((d: string) => {
-        const ws = wsRef.current;
-        if (ws?.readyState === WebSocket.OPEN) ws.send(encodeInput(d));
-      });
-      term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
-        const ws = wsRef.current;
-        if (ws?.readyState === WebSocket.OPEN) ws.send(encodeResize(cols, rows));
-      });
-      termRef.current = term;
-      fitRef.current = fit;
-      ro = new ResizeObserver(() => fit.fit());
-      ro.observe(hostRef.current);
-    })();
-    return () => {
-      disposed = true;
-      ro?.disconnect();
-      wsRef.current?.close();
-      termRef.current?.dispose();
-    };
+    if (!hostRef.current) return;
+    return session.attach(hostRef.current);
   }, []);
 
-  const connect = () => {
-    const term = termRef.current;
-    if (!term) return;
-    let target: string;
-    try {
-      target = normalizeTtydUrl(url);
-    } catch {
-      setStatus('error');
-      setNote('That address does not look right.');
-      return;
-    }
-    localStorage.setItem(URL_KEY, url);
-    wsRef.current?.close();
-    setStatus('connecting');
-    setNote('');
-    const ws = new WebSocket(target, ['tty']);
-    ws.binaryType = 'arraybuffer';
-    ws.onopen = () => {
-      ws.send(encodeHandshake(term.cols, term.rows));
-      setStatus('online');
-      term.focus();
-    };
-    ws.onmessage = (ev) => {
-      const data = typeof ev.data === 'string' ? new TextEncoder().encode(ev.data) : new Uint8Array(ev.data);
-      if (data[0] === 0x30) term.write(data.slice(1));
-    };
-    ws.onerror = () => {
-      setStatus('error');
-      setNote('Could not reach ttyd. Is it running with "ttyd -W bash"?');
-    };
-    ws.onclose = () => {
-      setStatus((s) => (s === 'error' ? s : 'idle'));
-      term.writeln('\r\n\x1b[33m[disconnected]\x1b[0m');
-    };
-    wsRef.current = ws;
-  };
-
-  const disconnect = () => wsRef.current?.close();
+  const online = status === 'online';
   const send = (text: string) => {
-    const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) ws.send(encodeInput(text));
-    termRef.current?.focus();
+    session.input(text);
+    session.focus();
+  };
+  const runLine = () => {
+    session.submit(line);
+    if (line.trim()) setPast((p) => (p[p.length - 1] === line ? p : [...p, line]));
+    setPastIndex(-1);
+    setLine('');
+  };
+  const recall = (dir: -1 | 1) => {
+    if (!past.length) return;
+    const start = pastIndex === -1 ? past.length : pastIndex;
+    const next = start + dir;
+    if (next >= past.length) {
+      setPastIndex(-1);
+      setLine('');
+    } else if (next >= 0) {
+      setPastIndex(next);
+      setLine(past[next] ?? '');
+    }
   };
   const copy = (t: string) => void navigator.clipboard?.writeText(t);
-
-  const online = status === 'online';
 
   return (
     <div className="space-y-3">
@@ -136,31 +72,75 @@ export default function TerminalPanel() {
           aria-label="Terminal address"
           className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-background/60 px-3 font-mono text-xs text-foreground focus:border-primary/50 focus:outline-none"
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          onChange={(e) => session.setUrl(e.target.value)}
         />
         {online ? (
-          <Button variant="hud" size="sm" className="rounded-lg" onClick={disconnect}>
+          <Button variant="hud" size="sm" className="rounded-lg" onClick={() => session.disconnect()}>
             <Plug /> Disconnect
           </Button>
         ) : (
-          <Button variant="arc" size="sm" className="rounded-lg" onClick={connect} disabled={status === 'connecting'}>
+          <Button variant="arc" size="sm" className="rounded-lg" onClick={() => session.connect()} disabled={status === 'connecting'}>
             <PlugZap /> Connect
           </Button>
         )}
       </div>
-      <p className="flex items-center gap-2 font-mono text-[0.65rem] uppercase tracking-wider text-subtle">
+      <p className="flex flex-wrap items-center gap-2 font-mono text-[0.65rem] uppercase tracking-wider text-subtle">
         <span
           className={cn(
             'size-2 rounded-full',
-            online ? 'bg-success' : status === 'error' ? 'bg-destructive' : status === 'connecting' ? 'bg-signal' : 'bg-subtle',
+            online ? 'bg-success' : status === 'error' ? 'bg-destructive' : status === 'connecting' ? 'bg-signal' : 'bg-primary',
           )}
         />
-        {status}
+        {STATUS_LABEL[status]}
         {note && <span className="normal-case tracking-normal text-destructive">{note}</span>}
       </p>
 
-      <div className="overflow-hidden rounded-xl border border-border-strong bg-code p-2">
+      <div className="overflow-hidden rounded-xl border border-border-strong bg-code p-2" onClick={() => session.focus()}>
         <div ref={hostRef} className="h-72 w-full" />
+      </div>
+
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          runLine();
+        }}
+      >
+        <input
+          aria-label="Command"
+          placeholder={online ? 'Type a command for Termux / PC…' : 'Type a command (try help)…'}
+          className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-background/60 px-3 font-mono text-xs text-foreground placeholder:text-subtle focus:border-primary/50 focus:outline-none"
+          value={line}
+          onChange={(e) => setLine(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              recall(-1);
+            } else if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              recall(1);
+            }
+          }}
+          autoCapitalize="off"
+          autoCorrect="off"
+          autoComplete="off"
+          spellCheck={false}
+          enterKeyHint="send"
+        />
+        <Button type="submit" variant="arc" size="sm" className="rounded-lg" aria-label="Run command">
+          <CornerDownLeft /> Run
+        </Button>
+      </form>
+
+      <div className="flex flex-wrap gap-1.5">
+        <QuickBtn onClick={() => send('\x03')}>Ctrl+C</QuickBtn>
+        <QuickBtn onClick={() => session.run('clear')}>Clear</QuickBtn>
+        <QuickBtn onClick={() => recall(-1)}>Last command</QuickBtn>
+        {online && <QuickBtn onClick={() => session.run('termux-wake-lock')}>Keep awake</QuickBtn>}
+        <QuickBtn onClick={() => session.setDirectTyping(!directTyping)} active={directTyping}>
+          {directTyping ? <Keyboard className="size-3.5" /> : <KeyboardOff className="size-3.5" />}
+          {directTyping ? 'Typing in terminal' : 'Type in terminal'}
+        </QuickBtn>
       </div>
 
       <div className="flex gap-1 overflow-x-auto scrollbar-none">
@@ -181,29 +161,28 @@ export default function TerminalPanel() {
         <Cmd label="Termux (Android)" cmd="pkg install -y ttyd nodejs git && ttyd -W bash" onCopy={copy} />
         <Cmd label="PC (after installing ttyd)" cmd="ttyd -W bash" onCopy={copy} />
         <p className="text-xs text-muted-foreground">
-          Open Jarvis on the same device that runs ttyd. Some browsers block local addresses on https pages; if
+          Without a connection you get Jarvis's built-in shell (type help). For real Linux commands, start ttyd
+          and tap Connect. On a phone, type in the command bar above; tap "Type in terminal" only for apps like nano. Open Jarvis on the same device that runs ttyd. Some browsers block local addresses on https pages; if
           Connect fails, allow "insecure content" for this site in browser settings.
         </p>
       </section>
 
-      <section className="space-y-2 rounded-xl border border-border bg-background/40 p-3">
-        <h4 className="hud-label">Local AI servers</h4>
-        {LOCAL_SERVERS.map((s) => (
-          <div key={s.id} className="space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-medium">{s.label} <span className="font-mono text-xs text-subtle">:{s.port}</span></span>
-              <Button variant="hud" size="sm" className="h-7 rounded-md text-xs" disabled={!online} onClick={() => send(`${s.setup}\r`)}>
-                Run in terminal
-              </Button>
-            </div>
-            <Cmd cmd={s.setup} onCopy={copy} />
-          </div>
-        ))}
-        <p className="text-xs text-muted-foreground">
-          When it's running, go to Keys → Custom and tap the {LOCAL_SERVERS.map((s) => s.label).join(' or ')} preset.
-        </p>
-      </section>
     </div>
+  );
+}
+
+function QuickBtn({ children, onClick, active }: { children: ReactNode; onClick: () => void; active?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs',
+        active ? 'border-primary/50 text-primary' : 'border-border text-muted-foreground hover:border-primary/50 hover:text-primary',
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
